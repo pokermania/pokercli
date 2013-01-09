@@ -21,7 +21,7 @@ def catcher(fn):
             return retl
     return wrap
 
-# poker game states
+# possible poker game states
 GAME_STATE_NULL = "null"
 GAME_STATE_BLIND_ANTE = "blindAnte"
 GAME_STATE_PRE_FLOP = "pre-flop"
@@ -38,30 +38,24 @@ GAME_STATE_END = "end"
 class Player(object):
     """Player object handles money and game states of the player"""
 
-    def __init__(self, serial=None, name=None, **player_info):
+    def __init__(self, serial=None, **player_info):
         self.serial = serial
-        self.name = name
         self.money = {}
-        self.chips = 0
+        self._chips = 0
         self._bet = 0
-        self.update(player_info)
-        self.buy_in_payed = False
-        self.seat = -1
-        self.sit_out = True
         self.cards = []
         self._fold = False
+        self.update(player_info)
+
+    def update(self, player_info):
+        """update informations about this player. E.g. seat or name of player"""
+        self.seat = player_info.get("seat", -1)
+        self.name = player_info.get("name", "unknown")
+        self.sit_out = player_info.get("sit_out", True)
 
     def notFold(self):
         """returns True if player is not fold"""
         return not self._fold
-
-    def update(self, player_info):
-        """update informations about this player. E.g. seat or name of player"""
-        if player_info.get('buy_in_payed'):
-            self.buy_in_payed = True
-        self.seat = player_info.get("seat", -1)
-        self.name = player_info.get("name", "unknown")
-        self.sit_out = player_info.get("sit_out", True)
 
     def sit(self):
         """change internale sit state to sit"""
@@ -78,7 +72,7 @@ class Player(object):
     def updateChips(self, chips=None, bet=None):
         """update table chips/bet of the player"""
         if not chips is None:
-            self.chips = chips
+            self._chips = chips
         if not bet is None:
             self._bet = bet
     def updateCards(self, cards):
@@ -89,7 +83,7 @@ class Player(object):
         return list(map(lambda x:x&63, self.cards))
     def rebuy(self, amount):
         """transfer money to the table (just internal state)"""
-        self.chips += amount
+        self._chips += amount
         self._decrease_money(amount)
 
     def reset(self):
@@ -101,17 +95,34 @@ class Player(object):
 
     def bet(self, amount):
         """transfer money from table to bet (just internal state)"""
-        self.chips -= amount
+        self._chips -= amount
         self._bet += amount
-        assert self.chips >= 0
+        assert self._chips >= 0
+
+    def getChips(self):
+        """returns the current chips amount"""
+        return self._chips
+
+    def getMoney(self):
+        """return players bank money"""
+        if 1 in self.money:
+            return self.money[1]
+        else:
+            return 0
+
+    def isSit(self):
+        """returns True if player sits"""
+        print self.sit_out
+        return (not self.sit_out)
 
     def _decrease_money(self, amount):
         """decrese player money, to keep track of your bank money (internal state)"""
         if 1 in self.money:
             self.money[1] -= amount
+
     def _player_info(self):
         """return some usefull information about"""
-        return "%r %s seat:%s m:%r c:%s b:%s " % (self.name, self.serial, self.seat, self.money, self.chips, self._bet)
+        return "%r %s seat:%s m:%r c:%s b:%s " % (self.name, self.serial, self.seat, self.money, self._chips, self._bet)
 
 class NoneTable(object):
     """
@@ -133,8 +144,6 @@ class NoneTable(object):
         self.board_cards = []
     def isInPosition(self, *args):
         return False
-    def getAvatarInfo(self):
-        return ""
     def getDebugLines(self, *args, **kw):
         return []
     def logIt(self, *args, **kw):
@@ -149,9 +158,12 @@ class Table(object):
     def __init__(self, protocol, avatar, table_info):
         self.protocol = protocol
         self.id = table_info.get('id', 0)
-        self.seats = [0] * table_info.get('seats', 10)
-        self.name = table_info.get('name', 'unnamed')
         self.seat = table_info.get('player_seated', -1)
+        self.seats = [0] * table_info.get('seats', 10)
+        if self.seat != -1:
+            self.seats[self.seat] = avatar.serial
+            assert avatar.seat == self.seat, "as %s, ss %s" % (avatar.seat, self.seat)
+        self.name = table_info.get('name', 'unnamed')
         self.betting_structure =  table_info['betting_structure']
         blinds, buy_ins, limit = table_info['betting_structure'].split('_')
         min_buy_in, max_buy_in = buy_ins.split('-')
@@ -171,7 +183,6 @@ class Table(object):
 
     def reset(self):
         """reseting game states for a new hand"""
-        self.in_game = []
         self.board_cards = []
         self.position = -1
         self._reset_players()
@@ -190,11 +201,10 @@ class Table(object):
 
     def logIt(self, astr, prefix=" [D] "):
         """a little helper function to log output"""
-        self.protocol.screenObj.addLine(prefix + str(astr))
+        self.protocol.logIt(astr, prefix=prefix)
 
     def updateSeats(self, seats):
         """update seat information"""
-        err = []
         for index, (old, new) in enumerate(zip(self.seats, seats)):
             if old == 0 and new != 0:
                 self.addPlayer(index, new)
@@ -203,15 +213,16 @@ class Table(object):
             elif old != new:
                 self.removePlayer(index)
                 self.addPlayer(index, new)
-                err.append("warning idx %s, old %s, new %s" % (index, old, new))
-        if err:
-            return err
+                self.logIt("warning idx %s, old %s, new %s" % (index, old, new))
 
     def addPlayer(self, index, serial):
         """Add player to this table"""
         self.seats[index] = serial
         # Request more information about this player
-        self.protocol.sendPacket(clientpackets.PacketPokerGetUserInfo(serial=serial))
+        if serial == self.avatar.serial:
+            self.players[index] = self.avatar
+        else:
+            self.protocol.sendPacket(clientpackets.PacketPokerGetUserInfo(serial=serial))
 
     def removePlayer(self, index):
         """remove player from this table"""
@@ -251,7 +262,7 @@ class Table(object):
     
     def inSmallBlindPosition(self):
         """returns True if the player in position is in small_blind position"""
-        return ((self.dealer + 1) % len(self.in_game)) == self.position
+        return len(self.in_game) > 0 and ((self.dealer + 1) % len(self.in_game)) == self.position
 
     def bigBlind(self):
         """returns the big_blind of the current table"""
@@ -262,6 +273,10 @@ class Table(object):
         self.protocol.sendPacket(networkpackets.PacketPokerBuyIn(amount=self.max_buy_in, **self._serial_and_game_id))
         self.protocol.sendPacket(networkpackets.PacketPokerAutoBlindAnte(**self._serial_and_game_id))
     
+    def doRebuy(self, amount):
+        """actually request a rebuy"""
+        self.protocol.sendPacket(networkpackets.PacketPokerRebuy(amount=amount, **self._serial_and_game_id))
+
     def doSit(self):
         """actually request a sit"""
         self.protocol.sendPacket(networkpackets.PacketPokerSit(**self._serial_and_game_id))
@@ -286,6 +301,9 @@ class Table(object):
         """actually request a call"""
         self.protocol.sendPacket(networkpackets.PacketPokerCall(**self._serial_and_game_id))
     
+    def doAllIn(self):
+        """actually raise all chips"""
+        self.doRaise(self.avatar.getChips())
     def doRaise(self, amount):
         """
             actually request a raise by a given amount.
@@ -360,7 +378,7 @@ class Table(object):
             handle = locals()["handle"+packet.__class__.__name__]
             return handle(packet)
         except KeyError:
-            self.logIt(" explain cant handle : %r" % packet.__class__.__name__)
+            # self.logIt(" explain cant handle : %r" % packet.__class__.__name__)
             return True
         except Exception:
             exc_type, exc_value, exc_traceback = sys.exc_info()

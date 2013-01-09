@@ -1,9 +1,62 @@
 #!/usr/bin/env python
 
 # Copyright (c) Twisted Matrix Laboratories.
-# See LICENSE for details.
 
 """
+I found this copyright notice, next in the same repository where a copy of the original file was.
+I made minor changes to this file.
+
+Olaf Gladis olaf@pokermania.de
+
+Copyright (c) 2001-2006
+Allen Short
+Andrew Bennetts
+Apple Computer, Inc.
+Benjamin Bruheim
+Bob Ippolito
+Canonical Limited
+Christopher Armstrong
+David Reid
+Donovan Preston
+Eric Mangold
+Itamar Shtull-Trauring
+James Knight
+Jason A. Mobarak
+Jonathan Lange
+Jonathan D. Simms
+Jp Calderone
+J_Hermann
+Kevin Turner
+Mary Gardiner
+Matthew Lefkowitz
+Massachusetts Institute of Technology
+Moshe Zadka
+Paul Swartz
+Pavel Pergamenshchik
+Ralph Meijer
+Sean Riley
+Travis B. Hartwell
+  
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
 This is an example of integrating curses with the twisted underlying    
 select loop. Most of what is in this is insignificant -- the main piece 
 of interest is the 'CursesStdIO' class.                                 
@@ -51,7 +104,7 @@ class Screen(CursesStdIO):
         self.statusText = "TEST CURSES APP -"
         self.searchText = ''
         self.stdscr = stdscr
-        self._logfn = "/home/olaf/Desktop/05_cli_client.log"
+        self._logfn = ""
         if self._logfn:
             open(self._logfn, "w").close()
 
@@ -193,8 +246,8 @@ if __name__ == '__main__':
     stdscr.refresh()
     def logItG(self, astr, prefix=" [D] "):
         screen.addLine(prefix + str(astr))
-    pokerFactory = PokerFactory(screen)
+    pokerFactory = PokerFactory(screen, msgpokerurl="http://poker.pokermania.de/")
     reactor.addReader(screen) # add screen object as a reader to the reactor
-    reactor.connectTCP("localhost",19380,pokerFactory) # connect to IRC
+    reactor.connectTCP("poker.pokermania.de",19380,pokerFactory) # connect to pokernetwork
     reactor.run() # have fun!
     screen.close()

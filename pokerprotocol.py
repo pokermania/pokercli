@@ -1,8 +1,11 @@
 import traceback, sys
+import urllib
+import simplejson
 from pokerpackets import packets, clientpackets, networkpackets
 from pokernetwork.client import UGAMEClientProtocol, UGAMEClientFactory
 
 from explain import Player, Table, NoneTable
+from twisted.web.client import getPage
 
 STATE_LOGIN = "login"
 STATE_SEARCH = "search"
@@ -11,7 +14,7 @@ STATE_PLAYING = "playing"
 
 
 class PokerClientProtocol(UGAMEClientProtocol):
-    def __init__(self, screenObj):
+    def __init__(self, screenObj, msgpokerurl):
         UGAMEClientProtocol.__init__(self)
         self.screenObj = screenObj
         self.screenObj.executeCmd = self.executeCmd
@@ -20,6 +23,7 @@ class PokerClientProtocol(UGAMEClientProtocol):
         self.table = NoneTable()
 
         self.game_id = -1
+        self.msgpokerurl = msgpokerurl
 
     def logIt(self, astr, show_it=True, prefix=" [D] "):
         if show_it:
@@ -28,6 +32,8 @@ class PokerClientProtocol(UGAMEClientProtocol):
             self.screenObj._log_into_file(prefix + str(astr))
 
     def cantHandle(self, handler, name):
+        return
+        # the following lines are still here to activate the debug lines easily again
         if name not in (
                 'PacketPokerSit',
                 'PacketPokerPlayerChips',
@@ -44,8 +50,8 @@ class PokerClientProtocol(UGAMEClientProtocol):
 
     def myPosition(self):
         serial = self.avatar.serial
-        if serial != -1 and serial not in self.table.in_game:
-            return -1
+        if serial == -1 or serial not in self.table.in_game:
+            return
         return self.table.in_game.index(serial)
 
     def changeState(self, state):
@@ -81,15 +87,45 @@ class PokerClientProtocol(UGAMEClientProtocol):
             # import rpdb2; rpdb2.start_embedded_debugger("haha")
             self.table.doBuyIn()
             self.table.doSit()
+        do_buy_in = do_bi
         def do_l(*args):
             if len(args) >= 2:
-                name = args.pop(0)
+                email = args.pop(0)
                 pw = args.pop(0)
             else:
-                name = "testuser"
-                pw = "testpass"
-            self.sendPacket(packets.PacketLogin(name=name, password=pw))
-            self.avatar.name = name
+                self.logIt("Error no email and password specified")
+                self.logIt("l <email> <password>")
+
+            def ok(raw_resp):
+                try:
+                    self.logIt("ok")
+                    for line in raw_resp.splitlines():
+                        self.logIt(line)
+                    resp = simplejson.loads(raw_resp)
+                    self._auth = resp['auth_key']
+                    self.sendPacket(packets.PacketAuth(auth=self._auth))
+
+                except:
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    self.screenObj.addLine(" EEE  login failed: " + repr(cmd))
+
+                    for exline in traceback.format_exception(exc_type, exc_value,
+                                                  exc_traceback):
+                        for line in exline.split('\n'):
+                            self.screenObj.addLine(" EEE " + str(line))
+            d = getPage(self.msgpokerurl+"/site/login?api_key=special-key",
+                method='POST',
+                postdata=simplejson.dumps({
+                    'email': email,
+                    'password': pw,
+                    'rememberMe': False }),
+                headers={'Content-Type':'application/json'})
+            def err(reaseon):
+                self.logIt(str(reason), prefix="EEE")
+            d.addCallback(ok)
+            d.addErrback(err)
+            self.logIt("getPage")
+
 
         def do_le(*args):
             self.table.doFold()
@@ -101,13 +137,24 @@ class PokerClientProtocol(UGAMEClientProtocol):
         def do_ch(*args):
             self.table.doCheck()
         def do_c(*args):
-            self.table.doCall()    
+            self.table.doCall()
+        do_call = do_c
         def do_f(*args):
             self.table.doFold()
+        do_fold = do_f
         def do_r(amount, *args):
             self.table.doRaise(int(amount))
+        do_raise = do_r
+        def do_rebuy(*args):
+            if len(args) > 0:
+                amount = int(args[0])
+            else:
+                amount = self.table.max_buy_in
+            self.table.doRebuy(amount)
         def do_ci(*args):
             self.logIt(self.table.getAvatarInfo())
+        def do_all_in(*args):
+            self.table.doAllIn()
         def default(commando, *args):
             self.logIt("commando %r unknown" % commando)
 
@@ -138,6 +185,9 @@ class PokerClientProtocol(UGAMEClientProtocol):
         if int(max_buy_in) < 5000:
             print_ = True        
         self.logIt(str(info), show_it=print_, prefix=" [_] ")
+
+    def itsYourTurn(self):
+        self.logIt("Your Turn POSITION: " + self.table.getAvatarInfo(), prefix=" $ ")
 
     def createTable(self, table_info):
         self.table = Table(self, self.avatar, table_info)
@@ -199,8 +249,9 @@ class PokerClientProtocol(UGAMEClientProtocol):
 
     def handlePlaying(self, packet):
         def handlePacketPokerPosition(packet):
-            if packet.position != -1 and packet.position == self.myPosition():
-                self.logIt("Your Turn: " + self.table.getAvatarInfo(), prefix=" $ ")
+            self.logIt("POSITION pp:%s, mp:%s, chips:%s" % (packet.position,self.myPosition(), self.avatar.getChips()))
+            if packet.position == self.myPosition():
+                self.itsYourTurn()
         try:
             handle = locals()["handle"+packet.__class__.__name__]
             handle(packet)
@@ -245,6 +296,9 @@ class PokerClientProtocol(UGAMEClientProtocol):
                 for line in exline.split('\n'):
                     self.screenObj.addLine(" EEE " + str(line))
 
+    def botLogin(self, name, password):
+        """login for bots"""
+        self.sendPacket(packets.PacketLogin(name=name, password=password))
 
 class PokerFactory(UGAMEClientFactory):
 
@@ -254,11 +308,12 @@ class PokerFactory(UGAMEClientFactory):
 
     protocol = PokerClientProtocol
 
-    def __init__(self, screenObj):
+    def __init__(self, screenObj, msgpokerurl):
         UGAMEClientFactory.__init__(self)
         self.screenObj = screenObj
         self.protocol = PokerClientProtocol
         self.established_deferred.addCallback(self.letsGo)
+        self.msgpokerurl = msgpokerurl
 
     def letsGo(self, protocol):
         # protocol.sendPacket(packets.PacketLogin(name="testuser", password="testpass"))
@@ -267,7 +322,7 @@ class PokerFactory(UGAMEClientFactory):
 
 
     def buildProtocol(self, addr=None):
-        instance = self.protocol(self.screenObj)
+        instance = self.protocol(self.screenObj, self.msgpokerurl)
         instance.factory = self
         self.protocol_instance = instance
         self.screenObj._p = instance
