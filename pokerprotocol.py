@@ -1,7 +1,7 @@
 import traceback, sys
 import urllib
 import simplejson
-from pokerpackets import packets, clientpackets, networkpackets
+from pokerpackets import packets, networkpackets
 from pokernetwork.client import UGAMEClientProtocol, UGAMEClientFactory
 
 from explain import Player, Table, NoneTable
@@ -208,15 +208,15 @@ class PokerClientProtocol(UGAMEClientProtocol):
         def handlePacketSerial(packet):
             serial = packet.serial
             self.avatar.serial = serial
-            self.sendPacket(clientpackets.PacketPokerGetPlayerInfo())
-            self.sendPacket(clientpackets.PacketPokerGetUserInfo(serial=serial))
+            self.sendPacket(networkpackets.PacketPokerGetPlayerInfo())
+            self.sendPacket(networkpackets.PacketPokerGetUserInfo(serial=serial))
         def handlePacketPokerPlayerInfo(packet):
             # you could update, your name/outfit/url
             pass
         def handlePacketPokerUserInfo(packet):
             self.avatar.updateMoney(packet.money)
             table_type = "%s\tholdem" % "1" if 1 in self.avatar.money else ""
-            self.sendPacket(clientpackets.PacketPokerTableSelect(string=table_type))
+            self.sendPacket(networkpackets.PacketPokerTableSelect(string=table_type))
         def handlePacketPokerTableList(packet):
             for p in packet.packets:
                 self.addTable(p)

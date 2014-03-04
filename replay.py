@@ -1,6 +1,5 @@
 from pokerpackets.packets import *
 from pokerpackets.networkpackets import *
-from pokerpackets.clientpackets import *
 
 class PacketNotFoundError(Exception): pass
         

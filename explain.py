@@ -1,5 +1,5 @@
 import traceback, sys
-from pokerpackets import clientpackets, networkpackets
+from pokerpackets import networkpackets
 from pokereval import PokerEval
 
 
@@ -222,7 +222,7 @@ class Table(object):
         if serial == self.avatar.serial:
             self.players[index] = self.avatar
         else:
-            self.protocol.sendPacket(clientpackets.PacketPokerGetUserInfo(serial=serial))
+            self.protocol.sendPacket(networkpackets.PacketPokerGetUserInfo(serial=serial))
 
     def removePlayer(self, index):
         """remove player from this table"""
